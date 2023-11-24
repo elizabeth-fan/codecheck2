@@ -32,6 +32,9 @@ public class Plan {
         if (debug) addScript("debug");        
     }
 
+    public Plan() {
+    }
+
     public void setLanguage(Language language) {
         this.language = language;
     }

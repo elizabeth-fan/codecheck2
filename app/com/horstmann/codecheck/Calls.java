@@ -9,6 +9,7 @@ public class Calls {
     public class Call {
         String name;
         String args;
+        String type;
         List<String> modifiers;
         private boolean hidden = false; 
 
@@ -56,6 +57,7 @@ public class Calls {
             throw new CodeCheckException("CALL in " + this.file + " and " + file);
         Call c = new Call();
         c.args = args;
+        c.type = language.functionName(next);
         calls.add(c);
         if (next.length() > 0) {
             String name = language.functionName(next);

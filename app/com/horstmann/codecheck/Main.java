@@ -270,15 +270,38 @@ public class Main {
             testInput(mainFile, runSolution, test, input, args, outFiles, timeout / runargs.size(), maxOutput / runargs.size(), interleaveio, hidden) ;
         }
     }
+
+    public String escapeSpecialCharacters(String arg) {
+        String escapedArg = arg;
+        
+        // Escape backslash first to prevent escaping characters twice
+        escapedArg = escapedArg.replace("\\", "\\\\");
     
-    private void testInput(Path mainFile,
+        // Escape other special characters
+        escapedArg = escapedArg.replace("*", "\\*");
+        escapedArg = escapedArg.replace("\"", "\\\"");
+        escapedArg = escapedArg.replace("\'", "\\\'");
+        escapedArg = escapedArg.replace("\n", "\\n");
+        escapedArg = escapedArg.replace("\r", "\\r");
+        escapedArg = escapedArg.replace("\t", "\\t");
+        escapedArg = escapedArg.replace("\b", "\\b");
+        escapedArg = escapedArg.replace("\f", "\\f");
+        
+        // Add more replacements here for other special characters if needed
+        
+        return escapedArg;
+    }
+    
+    void testInput(Path mainFile,
             boolean runSolution, String test, String input, String runargs, List<String> outFiles, int timeout, int maxOutput, boolean interleaveio, boolean hidden)
             throws Exception {
         String submissionRunID = plan.nextID("submissionrun");
-        plan.run("submissionrun", submissionRunID, mainFile, runargs, input, outFiles, timeout, maxOutput, interleaveio);
+        String escapedRunargs = escapeSpecialCharacters(runargs);
+        plan.run("submissionrun", submissionRunID, mainFile, escapedRunargs, input, outFiles, timeout, maxOutput, interleaveio);
+        plan.run("submissionrun", submissionRunID, mainFile, escapedRunargs, input, outFiles, timeout, maxOutput, interleaveio);
         String solutionRunID = plan.nextID("solutionrun");        
         if (runSolution) {
-            plan.run("solutionrun", solutionRunID, mainFile, runargs, input, outFiles, timeout, maxOutput, interleaveio);                
+            plan.run("solutionrun", solutionRunID, mainFile, escapedRunargs, input, outFiles, timeout, maxOutput, interleaveio);                
         }
         plan.addTask(() -> {
             if (!plan.compiled("submissionrun")) return;
@@ -567,4 +590,8 @@ public class Main {
         }
         return plan;
     }
+
+    public void setPlan(Plan plan2) {
+    }
+    
 }
