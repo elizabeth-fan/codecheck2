@@ -3,6 +3,7 @@ package com.horstmann.codecheck;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.DateFormat;
@@ -70,7 +71,7 @@ public class Main {
             System.getProperty("com.horstmann.codecheck.report"), 
             metadata, 
             new CommandLineResourceLoader()).getReport();
-        report.save(submissionDir, "report");        
+        Files.write(submissionDir.resolve("report." + report.extension()), report.getText().getBytes());
     }
 
     private void doSubstitutions(Map<Path, String> submissionFiles, Substitution sub) throws Exception {
@@ -207,7 +208,7 @@ public class Main {
         plan.compile(compileID, "submission", mainFile, dependentSourcePaths);
         plan.run(compileID, compileID, mainFile, "", null, timeout, maxOutputLen, false);
         plan.addTask(() -> {
-            report.run("Running " + mainFile);
+            report.run(mainFile.toString());
             if (!plan.checkCompiled(compileID, report, score)) return; 
             String outerr = plan.outerr(compileID);
             AsExpected cond = new AsExpected(comp);
@@ -308,19 +309,28 @@ public class Main {
             report.args(runargs);
     
             if (!interleaveio && !test.equals("Input")) report.input(input);
-    
+
+            String outerr = plan.outerr(submissionRunID);
+            String expectedOuterr = plan.outerr(solutionRunID);                
+            if (expectedOuterr != null && expectedOuterr.trim().length() > 0 && outFiles.size() == 0) {                
+            	boolean outcome = comp.execute(input, outerr, expectedOuterr, report, null, hidden);
+            	score.pass(outcome, report);
+            } else {        
+                // Not scoring output if there are outFiles, but showing in case there is an exception
+                report.output(outerr);
+            }
+            
             Map<String, String> contents = new HashMap<>();
             Map<String, CompareImages> imageComp = new HashMap<>();
-            String outerr = plan.outerr(submissionRunID);
             for (String f : outFiles) {
-                if (CompareImages.isImage(f))
+                if (CompareImages.isImage(f)) {
                     imageComp.put(f, new CompareImages(plan.getOutputBytes(submissionRunID, f)));
+                }
                 else
                     contents.put(f, plan.getOutputString(submissionRunID, f));            
             }
                     
             if (!runSolution) { 
-                report.output(outerr);
                 for (String f : outFiles) {
                     if (CompareImages.isImage(f)) {
                         CompareImages ci = imageComp.get(f);
@@ -333,18 +343,6 @@ public class Main {
                 return;
             } 
 
-            String expectedOuterr = plan.outerr(solutionRunID);
-                
-            if (expectedOuterr != null && expectedOuterr.trim().length() > 0) {                
-                if (outFiles.size() > 0) {
-                    // Report output but don't grade it
-                    report.output(outerr);
-                } else {
-                    boolean outcome = comp.execute(input, outerr, expectedOuterr, report, null, hidden);
-                    score.pass(outcome, report);
-                }
-            }        
-        
             for (String f : outFiles) {
                 if (CompareImages.isImage(f)) {
                     CompareImages ic = imageComp.get(f);
@@ -430,6 +428,7 @@ public class Main {
     public Plan run(Map<Path, String> submissionFiles, Map<Path, byte[]> problemFiles, 
             String reportType, Properties metadata, ResourceLoader resourceLoader) throws IOException {
         long startTime = System.currentTimeMillis();
+        boolean okToInterleave = true;
         boolean scoring = true;
         try {
             // Set up report first in case anything else throws an exception 
@@ -440,6 +439,10 @@ public class Main {
                 report = new JSONReport("Report");
             else if ("NJS".equals(reportType))
                 report = new NJSReport("Report");
+            else if ("Setup".equals(reportType)) {
+            	report = new SetupReport("Report");
+            	okToInterleave = false;
+            }
             else
                 report = new HTMLReport("Report");
             
@@ -448,6 +451,7 @@ public class Main {
             plan.readSolutionOutputs(problemFiles);
 
             problem = new Problem(problemFiles);
+            if (report instanceof SetupReport) ((SetupReport) report).setProblem(problem); 
             plan.setLanguage(problem.getLanguage());
 
             // TODO: This would be nice to have in Problem, except that one might later need to remove checkstyle.xml
@@ -465,8 +469,8 @@ public class Main {
             double tolerance = problem.getAnnotations().findUniqueDoubleKey("TOLERANCE", DEFAULT_TOLERANCE);
             boolean ignoreCase = !"false".equalsIgnoreCase(problem.getAnnotations().findUnique("IGNORECASE"));
             boolean ignoreSpace = !"false".equalsIgnoreCase(problem.getAnnotations().findUnique("IGNORESPACE"));
-            boolean okToInterleave = !"false".equalsIgnoreCase(problem.getAnnotations().findUnique("INTERLEAVE"));
-            scoring = !"false".equalsIgnoreCase(problem.getAnnotations().findUnique("SCORING"));
+            if ("false".equalsIgnoreCase(problem.getAnnotations().findUnique("SCORING"))) scoring = false;
+            if ("false".equalsIgnoreCase(problem.getAnnotations().findUnique("INTERLEAVE"))) okToInterleave = false;
             comp.setTolerance(tolerance);
             comp.setIgnoreCase(ignoreCase);
             comp.setIgnoreSpace(ignoreSpace);            
@@ -554,11 +558,11 @@ public class Main {
                         });
                     }
                 }
+                String remoteURL = resourceLoader.getProperty("com.horstmann.codecheck.comrun.remote");            
+                String scriptCommand = resourceLoader.getProperty("com.horstmann.codecheck.comrun.local");  
+                if (remoteURL == null && scriptCommand == null) scriptCommand = "/opt/codecheck/comrun";
+                plan.execute(report, remoteURL, scriptCommand);
             }
-            String remoteURL = resourceLoader.getProperty("com.horstmann.codecheck.comrun.remote");            
-            String scriptCommand = resourceLoader.getProperty("com.horstmann.codecheck.comrun.local");  
-            if (remoteURL == null && scriptCommand == null) scriptCommand = "/opt/codecheck/comrun";
-            plan.execute(report, remoteURL, scriptCommand);
             
             if (!problem.getInputMode()) { // Don't print submitted or provided files for run-only mode
                 report.header("studentFiles", "Submitted files");

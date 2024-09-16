@@ -533,17 +533,13 @@ window.addEventListener('load', async function () {
     };
 
     if (readonly) {
-      editor.setReadOnly(true);
-      // https://stackoverflow.com/questions/32806060/is-there-a-programmatic-way-to-hide-the-cursor-in-ace-editor
-      editor.renderer.$cursorLayer.element.style.display = 'none'
       editor.setTheme('ace/theme/kuroir');
-      let lines = editor.getSession().getDocument().getLength();
-      editor.setOptions({
-        minLines: lines,
-        maxLines: lines
-      });                
+      editor.setReadOnly(true);
+      // At one time, the cursor was completely blocked, but it seems reasonable to allow copying the code
+      // https://stackoverflow.com/questions/32806060/is-there-a-programmatic-way-to-hide-the-cursor-in-ace-editor
+      //editor.renderer.$cursorLayer.element.style.display = 'none'
       // https://github.com/ajaxorg/ace/issues/266
-      editor.textInput.getElement().tabIndex = -1
+      //editor.textInput.getElement().tabIndex = -1
     } else {
       editor.setTheme('ace/theme/chrome');
       
@@ -811,7 +807,8 @@ window.addEventListener('load', async function () {
         
         let editorDiv = document.createElement('div')
         editorDiv.classList.add('editor')
-        editorDiv.textContent = setup.useFiles[fileName].replace(/\r?\n$/, '');
+        let text = setup.useFiles[fileName].replace(/\r?\n$/, '')
+        editorDiv.textContent = text
         let editor = ace.edit(editorDiv)
         
         let fileObj = document.createElement('div')
@@ -821,8 +818,27 @@ window.addEventListener('load', async function () {
         filenameDiv.textContent = directoryPrefix + fileName
         fileObj.appendChild(filenameDiv)
         fileObj.appendChild(editorDiv)
-        setupAceEditor(editorDiv, editor, fileName, /*readonly*/ true)        
+        const MAX_LINES = 200
+        const lines =  text.split(/\n/).length            
+        editor.setOption('maxLines', Math.min(lines, MAX_LINES))
+        setupAceEditor(editorDiv, editor, fileName, /*readonly*/ true)
         form.appendChild(fileObj)
+
+        if (lines > MAX_LINES) {
+          const viewButton = createButton('hc-command', _('Expand'), function() {
+			if (editor.getOption('maxLines') > MAX_LINES) {
+                editor.setOption('maxLines', MAX_LINES)
+                editor.resize()               
+                viewButton.innerHTML = _('Expand')
+            }
+            else {
+                editor.setOption('maxLines', lines)
+                editor.resize()          
+                viewButton.innerHTML = _('Collapse')
+            }
+          })
+          form.appendChild(viewButton)
+        }
       }  
       
 	  submitButton = createButton('hc-start', submitButtonLabel, async function() {
@@ -925,8 +941,11 @@ window.addEventListener('load', async function () {
       }
               
       if ('errors' in data) {
-        for (const error of data.errors) 
-          editors.get(error['file']).errorAnnotation(error['line'], error['message'])
+        for (const error of data.errors) {
+          const editor = editors.get(error['file'])
+          // TODO: Non-editable files are not in editors. Would be nice to annotate anyway 			
+          if (editor !== undefined) editor.errorAnnotation(error['line'], error['message'])
+        }
       }
     }
     
